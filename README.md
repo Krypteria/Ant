@@ -18,7 +18,7 @@ Ant has 4 main commands, deploy, desinfect, redeploy and probe.
 
 ## Ant preview
 
-![Ant](https://github.com/Krypteria/Ant/assets/55555187/1b0b5ac5-1a63-468f-938d-0b4cd8759119)
+![post](https://github.com/Krypteria/Ant/assets/55555187/af152fb7-7326-4bde-a9d3-9781529d496e)
 
 ## Ant capabilities
 
