@@ -38,7 +38,7 @@ Ant allows the user to perform actions using the WMI protocol or the WinRM proto
 The topology.conf file has the following structure:
 ```
 # tunnel
-protocol,mode,command,dst_addr,dst_port,src_addr,src_port,target,chisel_id,probe_protocol
+protocol,mode,command,dst_addr,dst_port,src_addr,target,chisel_id,probe_protocol
 
 # port forwarding
 protocol,mode,command,dst_addr,dst_port,src_addr,src_port
@@ -88,7 +88,7 @@ For the above topology, an example of auth.conf file would be as follows:
 ```
 172.16.1.23,epicorp.local,mySuperDA,domainadmin123
 172.16.1.5,epicorp.local,mySuperDA,domainadmin123
-172.16.2.6,supercorp.local,:70016778cc0524c799ac25b439bd61e0
+172.16.2.6,supercorp.local,JeffADM:70016778cc0524c799ac25b439bd61e0
 ```
 
 Having explained the requirements for implementing actions with Ant, it is important to understand the inner workings of Ant in order to assess its opsec degree (it's not much but it's honest work) an when to use it.
@@ -99,14 +99,14 @@ Ant performs the deployment phase in a variable number of stages, depending on w
 
 Tunnel 
 
-1. An exception in the anti-malware solution for the  *C:\windows\system32\drivers\spool\color* folder is deployed remotely using WMI/WinRM (Currently only Windows Defender is covered)
+1. An exception in the anti-malware solution for the *C:\windows\system32\drivers\spool\color or C:\users\public\documents* (if the first one doesn't exist, Ant uses the second one) folder is deployed remotely using WMI/WinRM (Currently only Windows Defender is covered)
 2. Through an SMB connection the binary is uploaded to the *C:\windows\system32\drivers\spool\color* folder 
 3. Once the binary has been deployed, it is verified that the binary has been uploaded correctly by accessing it via SMB.
 4. Using WMI / WinRM, the command associated with that binary is executed using the parameters of the topology.conf and auth.conf files.
 
 Port forwarding
 
-1. An exception in the anti-malware solution for the  *C:\windows\system32\drivers\spool\color* folder is deployed remotely using WMI/WinRM (Currently only Windows Defender is covered)
+1. An exception in the anti-malware solution for the  *C:\windows\system32\drivers\spool\color or C:\users\public\documents* (if the first one doesn't exist, Ant uses the second one) folder is deployed remotely using WMI/WinRM (Currently only Windows Defender is covered)
 2. Through an SMB connection the binary is uploaded to the *C:\windows\system32\drivers\spool\color* folder (in the netsh case, this step is not performed)
 3. Using WMI / WinRM, the command associated with that binary is executed using the parameters of the topology.conf and auth.conf files
 
@@ -121,7 +121,7 @@ A less known alternative is the registry key *HKLM\SOFTWARE\Policies\Microsoft\W
 
 In general, the keys \Exclusion and \Paths are not defined, so it is necessary to first check if they are present or need to be created. To do this, Ant uses different ways to obtain this information. In the case of **WMI**, the [stdregprov](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/regprov/stdregprov) class is used to query the registry and obtain direct output. In the case of **WinRM** it makes use of the endpoint :5985/wsman to spawn a cmd.exe process that interacts with the registry using reg.exe.
 
-Once the presence of these registry keys have been checked and they have been created if necessary, Ant creates a new exclusion for the file C:\windows\system32\drivers\spool\color by using reg.exe. Once the exclusion has been added, it is necessary to update the machine's group policies for this change to take effect, which requires Administrator permissions. The default Windows gpupdate command is used to perform this update.
+Once the presence of these registry keys have been checked and they have been created if necessary, Ant creates a new exclusion for the file *C:\windows\system32\drivers\spool\color or C:\users\public\documents* (if the first one doesn't exist, Ant uses the second one) using reg.exe. Once the exclusion has been added, it is necessary to update the machine's group policies for this change to take effect, which requires Administrator permissions. The default Windows gpupdate command is used to perform this update.
 
 It is important to note that this technique only works on domain-joined machines that can make use of group policies. For non-domain joined machines you would have to create an empty local group policy and then update the group policy or reboot the machine. These options are not implemented.
 

